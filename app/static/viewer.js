@@ -469,7 +469,7 @@
     pipResizeHandle.addEventListener('pointermove', (e) => {
       if (!resizing) return;
       const parent = pipContainer.parentElement;
-      const maxW = parent.offsetWidth * 0.5;
+      const maxW = parent.offsetWidth;
       const delta = startX - e.clientX; // dragging left = bigger
       let newWidth = Math.max(160, Math.min(startWidth + delta, maxW));
       pipContainer.style.width = newWidth + 'px';
