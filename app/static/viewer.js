@@ -13,6 +13,16 @@
   let currentStreamId = null;
   let thumbnailTimer = null;
 
+  // PiP state
+  const pipContainer = document.getElementById('pip-container');
+  const pipVideo = document.getElementById('pip-video');
+  const pipLabel = document.getElementById('pip-label');
+  const pipCloseBtn = document.getElementById('pip-close');
+  const pipMuteBtn = document.getElementById('pip-mute');
+  const pipResizeHandle = document.getElementById('pip-resize-handle');
+  let pipHls = null;
+  let pipStreamId = null;
+
   const THUMBNAIL_REFRESH_MS = 30_000;
 
   // ---------------------------------------------------------------- Volume (persists across switches)
@@ -94,7 +104,13 @@
       const card = document.createElement('div');
       card.className = 'camera-card';
       card.dataset.streamId = stream.id;
-      card.addEventListener('click', () => switchStream(stream.id));
+      card.addEventListener('click', (e) => {
+        if (e.shiftKey) {
+          pinStream(stream.id);
+        } else {
+          switchStream(stream.id);
+        }
+      });
 
       const img = document.createElement('img');
       img.src = stream.thumbnailUrl;
@@ -287,6 +303,182 @@
   function hideZoneTooltip() {
     if (tooltip) tooltip.style.opacity = '0';
   }
+
+  // ---------------------------------------------------------------- PiP (Picture-in-Picture)
+
+  function pinStream(streamId) {
+    // Toggle off if already pinned to this stream
+    if (pipStreamId === streamId) {
+      unpinStream();
+      return;
+    }
+
+    pipStreamId = streamId;
+    const stream = streamById(streamId);
+    pipLabel.textContent = stream ? stream.name : streamId;
+
+    // Destroy previous PiP HLS instance
+    if (pipHls) {
+      pipHls.destroy();
+      pipHls = null;
+    }
+
+    const url = '/hls/' + encodeURIComponent(streamId) + '/index.m3u8';
+
+    if (Hls.isSupported()) {
+      pipHls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: true,
+        liveSyncDurationCount: 2,
+        liveMaxLatencyDurationCount: 5,
+        maxBufferLength: 10,
+        backBufferLength: 5,
+      });
+      pipHls.loadSource(url);
+      pipHls.attachMedia(pipVideo);
+      pipHls.on(Hls.Events.MANIFEST_PARSED, () => {
+        pipVideo.play().catch(() => {});
+      });
+      pipHls.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) {
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) pipHls.startLoad();
+          else if (data.type === Hls.ErrorTypes.MEDIA_ERROR)
+            pipHls.recoverMediaError();
+        }
+      });
+    } else if (pipVideo.canPlayType('application/vnd.apple.mpegurl')) {
+      pipVideo.src = url;
+      pipVideo.addEventListener(
+        'loadedmetadata',
+        () => {
+          pipVideo.play().catch(() => {});
+        },
+        { once: true },
+      );
+    }
+
+    pipContainer.classList.remove('pip-hidden');
+    highlightPinnedCard(streamId);
+    updatePipMuteIcon();
+  }
+
+  function unpinStream() {
+    if (pipHls) {
+      pipHls.destroy();
+      pipHls = null;
+    }
+    pipVideo.removeAttribute('src');
+    pipStreamId = null;
+    pipContainer.classList.add('pip-hidden');
+    highlightPinnedCard(null);
+  }
+
+  function highlightPinnedCard(streamId) {
+    cameraGrid.querySelectorAll('.camera-card').forEach((card) => {
+      const isPinned = card.dataset.streamId === streamId;
+      card.classList.toggle('pinned', isPinned);
+      // Add/remove pin badge
+      let badge = card.querySelector('.pin-badge');
+      if (isPinned && !badge) {
+        badge = document.createElement('span');
+        badge.className = 'pin-badge';
+        badge.textContent = '\u{1F4CC}';
+        card.appendChild(badge);
+      } else if (!isPinned && badge) {
+        badge.remove();
+      }
+    });
+  }
+
+  // PiP mute toggle
+  function updatePipMuteIcon() {
+    pipMuteBtn.textContent = pipVideo.muted ? '\u{1F507}' : '\u{1F50A}';
+  }
+
+  pipMuteBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    pipVideo.muted = !pipVideo.muted;
+    updatePipMuteIcon();
+  });
+
+  // PiP close button
+  pipCloseBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    unpinStream();
+  });
+
+  // ---- PiP drag
+  (function initPipDrag() {
+    let dragging = false;
+    let offsetX = 0;
+    let offsetY = 0;
+
+    pipContainer.addEventListener('pointerdown', (e) => {
+      // Don't drag when interacting with buttons or resize handle
+      if (e.target.closest('#pip-close, #pip-mute, #pip-resize-handle')) return;
+      dragging = true;
+      pipContainer.classList.add('pip-dragging');
+      const rect = pipContainer.getBoundingClientRect();
+      offsetX = e.clientX - rect.left;
+      offsetY = e.clientY - rect.top;
+      pipContainer.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+
+    pipContainer.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const parent = pipContainer.parentElement;
+      const parentRect = parent.getBoundingClientRect();
+      const pipW = pipContainer.offsetWidth;
+      const pipH = pipContainer.offsetHeight;
+
+      let newLeft = e.clientX - parentRect.left - offsetX;
+      let newTop = e.clientY - parentRect.top - offsetY;
+
+      // Constrain within parent
+      newLeft = Math.max(0, Math.min(newLeft, parentRect.width - pipW));
+      newTop = Math.max(0, Math.min(newTop, parentRect.height - pipH));
+
+      pipContainer.style.left = newLeft + 'px';
+      pipContainer.style.top = newTop + 'px';
+      pipContainer.style.right = 'auto';
+      pipContainer.style.bottom = 'auto';
+    });
+
+    pipContainer.addEventListener('pointerup', () => {
+      dragging = false;
+      pipContainer.classList.remove('pip-dragging');
+    });
+  })();
+
+  // ---- PiP resize (bottom-left handle)
+  (function initPipResize() {
+    let resizing = false;
+    let startX = 0;
+    let startWidth = 0;
+
+    pipResizeHandle.addEventListener('pointerdown', (e) => {
+      resizing = true;
+      startX = e.clientX;
+      startWidth = pipContainer.offsetWidth;
+      pipResizeHandle.setPointerCapture(e.pointerId);
+      e.preventDefault();
+      e.stopPropagation();
+    });
+
+    pipResizeHandle.addEventListener('pointermove', (e) => {
+      if (!resizing) return;
+      const parent = pipContainer.parentElement;
+      const maxW = parent.offsetWidth * 0.5;
+      const delta = startX - e.clientX; // dragging left = bigger
+      let newWidth = Math.max(160, Math.min(startWidth + delta, maxW));
+      pipContainer.style.width = newWidth + 'px';
+    });
+
+    pipResizeHandle.addEventListener('pointerup', () => {
+      resizing = false;
+    });
+  })();
 
   // ---------------------------------------------------------------- Fetch helper
 

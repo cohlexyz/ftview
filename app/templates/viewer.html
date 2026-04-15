@@ -29,6 +29,17 @@ block head %}
           value="1"
         />
       </div>
+
+      <!-- Picture-in-Picture pinned view -->
+      <div id="pip-container" class="pip-hidden">
+        <video id="pip-video" playsinline muted></video>
+        <div id="pip-label"></div>
+        <button id="pip-mute" type="button" title="Mute/Unmute PiP">
+          &#x1F507;
+        </button>
+        <button id="pip-close" type="button" title="Close PiP">&times;</button>
+        <div id="pip-resize-handle"></div>
+      </div>
     </div>
 
     <!-- Camera grid sidebar -->
