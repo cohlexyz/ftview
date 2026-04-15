@@ -38,11 +38,27 @@ auth_service = AuthService()
 ft_client = FishtankClient()
 
 
+# Persistent HTTP client for HLS proxy (avoids TLS handshake per request)
+_hls_client: httpx.AsyncClient | None = None
+
+
+def _get_hls_client() -> httpx.AsyncClient:
+    global _hls_client
+    if _hls_client is None or _hls_client.is_closed:
+        _hls_client = httpx.AsyncClient(timeout=30, follow_redirects=True)
+    return _hls_client
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _hls_client
+    _hls_client = httpx.AsyncClient(timeout=30, follow_redirects=True)
     await auth_service.start_refresh_loop()
     yield
     auth_service.stop_refresh_loop()
+    await ft_client.close()
+    await _hls_client.aclose()
+    _hls_client = None
 
 
 app = FastAPI(title="Fishtank Stream Viewer", lifespan=lifespan)
@@ -158,11 +174,10 @@ async def hls_proxy(stream_id: str, path: str):
     # For .m3u8 playlists: fetch fully, rewrite any absolute URLs so they
     # also go through our proxy (otherwise HLS.js hits CORS on segments).
     if path.endswith(".m3u8"):
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-            resp = await client.get(upstream)
-            if resp.status_code != 200:
-                raise HTTPException(resp.status_code, "Upstream error")
-            body = resp.text
+        resp = await _get_hls_client().get(upstream)
+        if resp.status_code != 200:
+            raise HTTPException(resp.status_code, "Upstream error")
+        body = resp.text
         # Rewrite absolute https://domain/hls/live+id/… URLs to local /hls/id/…
         body = re.sub(
             r"https?://[^/]+/hls/live\+([^/]+)/",
@@ -178,12 +193,11 @@ async def hls_proxy(stream_id: str, path: str):
 
     # For .ts segments and other files: stream directly
     async def _stream():
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-            async with client.stream("GET", upstream) as resp:
-                if resp.status_code != 200:
-                    return
-                async for chunk in resp.aiter_bytes(chunk_size=64 * 1024):
-                    yield chunk
+        async with _get_hls_client().stream("GET", upstream) as resp:
+            if resp.status_code != 200:
+                return
+            async for chunk in resp.aiter_bytes(chunk_size=64 * 1024):
+                yield chunk
 
     if path.endswith(".ts"):
         ct = "video/mp2t"

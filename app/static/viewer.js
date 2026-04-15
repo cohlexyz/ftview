@@ -151,20 +151,14 @@
     const stream = streamById(streamId);
     streamLabel.textContent = stream ? stream.name : streamId;
 
-    // Fetch HLS URL
-    const data = await fetchJson(
-      '/api/stream-url/' + encodeURIComponent(streamId),
-    );
-    if (!data || !data.url) return;
+    // Start HLS playback directly (URL is predictable, no round-trip needed)
+    loadHls('/hls/' + encodeURIComponent(streamId) + '/index.m3u8');
 
-    loadHls(data.url);
-
-    // Load clickable zones if the stream is interactive
+    // Load clickable zones in parallel with HLS startup
     if (stream && stream.interactive) {
-      const zones = await fetchJson(
-        '/api/zones/' + encodeURIComponent(streamId),
-      );
-      renderZones(zones);
+      fetchJson('/api/zones/' + encodeURIComponent(streamId)).then((zones) => {
+        if (currentStreamId === streamId) renderZones(zones);
+      });
     } else {
       clearZones();
     }
@@ -188,6 +182,10 @@
       hls = new Hls({
         enableWorker: true,
         lowLatencyMode: true,
+        liveSyncDurationCount: 2,
+        liveMaxLatencyDurationCount: 5,
+        maxBufferLength: 10,
+        backBufferLength: 5,
       });
       hls.loadSource(url);
       hls.attachMedia(video);
