@@ -18,6 +18,20 @@ from .auth import AuthService
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger("ftview")
 
+
+class _HlsLogFilter(logging.Filter):
+    """Suppress access-log lines for /hls/ proxy requests."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        if ('"GET https://streams-' in msg or '"GET /hls/' in msg) and '" 200' in msg:
+            return False
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(_HlsLogFilter())
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 BASE_DIR = Path(__file__).resolve().parent
 
 auth_service = AuthService()

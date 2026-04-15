@@ -136,8 +136,11 @@ body {
 
 #zone-overlay polygon {
   pointer-events: auto;
-  fill: transparent;
+  fill: rgba(0, 0, 0, 0.01);
+  fill-rule: evenodd;
   stroke: transparent;
+  stroke-width: 2px;
+  vector-effect: non-scaling-stroke;
   cursor: pointer;
   transition:
     fill 0.15s,
@@ -145,9 +148,8 @@ body {
 }
 
 #zone-overlay polygon:hover {
-  fill: rgba(145, 71, 255, 0.25);
+  fill: rgba(145, 71, 255, 0.2);
   stroke: rgba(145, 71, 255, 0.6);
-  stroke-width: 0.003;
 }
 
 #stream-label {
