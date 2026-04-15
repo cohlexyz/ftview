@@ -1,0 +1,18 @@
+{% extends "base.html" %} {% block title %}Fishtank Viewer{% endblock %} {%
+block head %}
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<script src="/static/viewer.js" defer></script>
+{% endblock %} {% block body %}
+<div id="app">
+  <!-- Main video area -->
+  <div id="video-container">
+    <video id="video" playsinline></video>
+    <svg id="zone-overlay" viewBox="0 0 1 1" preserveAspectRatio="none"></svg>
+    <div id="stream-label"></div>
+  </div>
+
+  <!-- Camera grid -->
+  <h2 id="grid-heading">Cameras</h2>
+  <div id="camera-grid"></div>
+</div>
+{% endblock %}
