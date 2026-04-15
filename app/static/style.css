@@ -105,9 +105,26 @@ body {
 
 /* ------------------------------------------------ Viewer layout */
 #app {
-  max-width: 1400px;
   margin: 0 auto;
   padding: 1rem;
+}
+
+#viewer-layout {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+#video-panel {
+  flex: 1;
+  min-width: 0;
+}
+
+#grid-panel {
+  width: 480px;
+  flex-shrink: 0;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
 }
 
 /* ---- Video */
@@ -118,6 +135,54 @@ body {
   background: #000;
   border-radius: var(--radius);
   overflow: hidden;
+}
+
+/* ---- Volume controls */
+#volume-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+}
+
+#mute-btn {
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0.2rem;
+  line-height: 1;
+}
+
+#volume-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 120px;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+#volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+
+#volume-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+  cursor: pointer;
 }
 
 #video {
@@ -172,15 +237,17 @@ body {
 
 /* ---- Grid */
 #grid-heading {
-  margin: 1.25rem 0 0.75rem;
+  margin: 0 0 0.75rem;
   font-size: 1.1rem;
   color: var(--text-dim);
 }
 
 #camera-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 0.75rem;
+  grid-template-columns: 1fr 1fr 1fr;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0 5px;
 }
 
 .camera-card {
@@ -251,6 +318,9 @@ body {
   flex-shrink: 0;
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  position: absolute;
+  top: 0;
+  right: 0;
 }
 
 /* Zone tooltip */
@@ -266,4 +336,19 @@ body {
   z-index: 10;
   opacity: 0;
   transition: opacity 0.15s;
+}
+
+/* ---- Responsive: stack on narrow screens */
+@media (max-width: 768px) {
+  #viewer-layout {
+    flex-direction: column;
+  }
+  #grid-panel {
+    width: 100%;
+    max-height: none;
+  }
+  #camera-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  }
 }

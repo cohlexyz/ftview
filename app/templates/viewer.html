@@ -4,15 +4,38 @@ block head %}
 <script src="/static/viewer.js" defer></script>
 {% endblock %} {% block body %}
 <div id="app">
-  <!-- Main video area -->
-  <div id="video-container">
-    <video id="video" playsinline></video>
-    <svg id="zone-overlay" viewBox="0 0 1 1" preserveAspectRatio="none"></svg>
-    <div id="stream-label"></div>
-  </div>
+  <div id="viewer-layout">
+    <!-- Main video area -->
+    <div id="video-panel">
+      <div id="video-container">
+        <video id="video" playsinline></video>
+        <svg
+          id="zone-overlay"
+          viewBox="0 0 1 1"
+          preserveAspectRatio="none"
+        ></svg>
+        <div id="stream-label"></div>
+      </div>
+      <div id="volume-controls">
+        <button id="mute-btn" type="button" title="Mute/Unmute">
+          &#x1F50A;
+        </button>
+        <input
+          id="volume-slider"
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value="1"
+        />
+      </div>
+    </div>
 
-  <!-- Camera grid -->
-  <h2 id="grid-heading">Cameras</h2>
-  <div id="camera-grid"></div>
+    <!-- Camera grid sidebar -->
+    <div id="grid-panel">
+      <h2 id="grid-heading">Cameras</h2>
+      <div id="camera-grid"></div>
+    </div>
+  </div>
 </div>
 {% endblock %}

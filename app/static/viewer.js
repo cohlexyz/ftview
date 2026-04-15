@@ -5,6 +5,8 @@
   const zoneOverlay = document.getElementById('zone-overlay');
   const streamLabel = document.getElementById('stream-label');
   const cameraGrid = document.getElementById('camera-grid');
+  const muteBtn = document.getElementById('mute-btn');
+  const volumeSlider = document.getElementById('volume-slider');
 
   let hls = null;
   let streamsData = null; // full API response
@@ -13,9 +15,49 @@
 
   const THUMBNAIL_REFRESH_MS = 30_000;
 
+  // ---------------------------------------------------------------- Volume (persists across switches)
+
+  function loadVolume() {
+    const saved = localStorage.getItem('ftview-volume');
+    const muted = localStorage.getItem('ftview-muted');
+    if (saved !== null) {
+      video.volume = parseFloat(saved);
+      volumeSlider.value = saved;
+    }
+    if (muted === 'true') {
+      video.muted = true;
+    }
+    updateMuteIcon();
+  }
+
+  function updateMuteIcon() {
+    if (video.muted || video.volume === 0) {
+      muteBtn.textContent = '\u{1F507}';
+    } else if (video.volume < 0.5) {
+      muteBtn.textContent = '\u{1F509}';
+    } else {
+      muteBtn.textContent = '\u{1F50A}';
+    }
+  }
+
+  volumeSlider.addEventListener('input', () => {
+    video.volume = parseFloat(volumeSlider.value);
+    video.muted = false;
+    localStorage.setItem('ftview-volume', volumeSlider.value);
+    localStorage.setItem('ftview-muted', 'false');
+    updateMuteIcon();
+  });
+
+  muteBtn.addEventListener('click', () => {
+    video.muted = !video.muted;
+    localStorage.setItem('ftview-muted', String(video.muted));
+    updateMuteIcon();
+  });
+
   // ---------------------------------------------------------------- Init
 
   async function init() {
+    loadVolume();
     streamsData = await fetchJson('/api/streams');
     if (!streamsData) return;
     buildGrid();
@@ -150,6 +192,7 @@
       hls.loadSource(url);
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        loadVolume();
         video.play().catch(() => {}); // autoplay may be blocked
       });
       hls.on(Hls.Events.ERROR, (_event, data) => {
@@ -167,6 +210,7 @@
       video.addEventListener(
         'loadedmetadata',
         () => {
+          loadVolume();
           video.play().catch(() => {});
         },
         { once: true },
