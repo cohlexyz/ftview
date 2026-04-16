@@ -4,10 +4,10 @@ Simple UI for fisthank.live. Proxies all requests to the official API and requir
 Usage:
 
 ```
-python -m venv && source venv/bin/activate && python run.py
+python -m venv && source venv/bin/activate && pip install -r requirements && python run.py
 ```
 
-Or download a prebuild binary from [relasese](https://github.com/cohlexyz/ftview/releases).
+Or download a prebuild binary from [releases](https://github.com/cohlexyz/ftview/releases).
 
 Go to localhost:8000 and login with your fishtank.live credentials. They will be saved locally to `credentials.json`.
 
