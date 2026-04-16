@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -32,7 +33,12 @@ class _HlsLogFilter(logging.Filter):
 logging.getLogger("uvicorn.access").addFilter(_HlsLogFilter())
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
-BASE_DIR = Path(__file__).resolve().parent
+# When running as a PyInstaller frozen binary, assets are unpacked into
+# sys._MEIPASS.  Fall back to the normal source-relative path otherwise.
+if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+    BASE_DIR = Path(sys._MEIPASS) / "app"  # type: ignore[attr-defined]
+else:
+    BASE_DIR = Path(__file__).resolve().parent
 
 auth_service = AuthService()
 ft_client = FishtankClient()
