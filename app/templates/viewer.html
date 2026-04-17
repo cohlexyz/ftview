@@ -1,6 +1,7 @@
 {% extends "base.html" %} {% block title %}Fishtank Viewer{% endblock %} {%
 block head %}
-<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<script src="/static/hls.js"></script>
+<script src="/static/mp4-muxer.min.js"></script>
 <script src="/static/viewer.js" defer></script>
 {% endblock %} {% block body %}
 <div id="app">
@@ -39,6 +40,26 @@ block head %}
             High
           </button>
         </div>
+        <div class="clip-controls">
+          <select id="clip-duration" title="Buffer length">
+            <option value="60">1m</option>
+            <option value="120">2m</option>
+            <option value="300" selected>5m</option>
+            <option value="600">10m</option>
+          </select>
+          <button id="clip-toggle" type="button" title="Start clip buffer">
+            &#x2702;
+          </button>
+          <button
+            id="clip-save"
+            type="button"
+            title="Save clip"
+            style="display: none"
+          >
+            &#x1F4BE;
+          </button>
+          <span id="clip-info" class="clip-info" style="display: none"></span>
+        </div>
       </div>
     </div>
 
@@ -57,12 +78,55 @@ block head %}
         </button>
         <button class="quality-btn" data-quality="high" type="button">H</button>
       </div>
+      <div id="pip-clip-controls" class="clip-controls pip-clip-bar">
+        <button
+          id="pip-clip-toggle"
+          type="button"
+          title="Start PiP clip buffer"
+        >
+          &#x2702;
+        </button>
+        <button
+          id="pip-clip-save"
+          type="button"
+          title="Save PiP clip"
+          style="display: none"
+        >
+          &#x1F4BE;
+        </button>
+        <span id="pip-clip-info" class="clip-info" style="display: none"></span>
+      </div>
       <div id="pip-resize-handle"></div>
     </div>
 
     <!-- Camera grid sidebar -->
     <div id="grid-panel">
       <div id="camera-grid"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Clip export modal -->
+<div id="clip-modal" class="clip-modal-hidden">
+  <div id="clip-modal-backdrop" class="clip-modal-backdrop"></div>
+  <div class="clip-modal-panel">
+    <h3>Save Clip</h3>
+    <div id="clip-timeline" class="clip-timeline">
+      <div class="clip-timeline-fill"></div>
+      <div id="clip-handle-start" class="clip-handle clip-handle-start"></div>
+      <div id="clip-handle-end" class="clip-handle clip-handle-end"></div>
+    </div>
+    <div class="clip-modal-info">
+      <span id="clip-range-display"></span>
+      <span id="clip-format-badge" class="clip-format-badge"></span>
+    </div>
+    <div class="clip-modal-actions">
+      <button id="clip-modal-download" type="button" class="clip-btn-primary">
+        Download
+      </button>
+      <button id="clip-modal-cancel" type="button" class="clip-btn-secondary">
+        Cancel
+      </button>
     </div>
   </div>
 </div>

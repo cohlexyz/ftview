@@ -576,3 +576,286 @@ body {
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* ------------------------------------------------ Clip controls */
+.clip-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 0.75rem;
+}
+
+.clip-controls button {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
+  line-height: 1;
+}
+
+.clip-controls button:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.clip-controls button.clip-active {
+  background: rgba(235, 59, 90, 0.15);
+  border-color: var(--error);
+  color: var(--error);
+  animation: clip-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes clip-pulse {
+  0%,
+  100% {
+    border-color: var(--error);
+  }
+  50% {
+    border-color: rgba(235, 59, 90, 0.4);
+  }
+}
+
+.clip-controls select {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  padding: 0.2rem 0.3rem;
+  border-radius: 4px;
+  cursor: pointer;
+  outline: none;
+}
+
+.clip-controls select:focus {
+  border-color: var(--accent);
+}
+
+.clip-info {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* PiP clip bar */
+.pip-clip-bar {
+  position: absolute;
+  bottom: 0.3rem;
+  left: 0.3rem;
+  margin-left: 0;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 4px;
+  padding: 0 0.2rem;
+  opacity: 0;
+  transition: opacity 0.2s;
+  z-index: 2;
+}
+
+#pip-container:hover .pip-clip-bar {
+  opacity: 1;
+}
+
+.pip-clip-bar button {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.3rem;
+  background: transparent;
+  border-color: transparent;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.pip-clip-bar button:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.pip-clip-bar button.clip-active {
+  color: var(--error);
+  background: rgba(235, 59, 90, 0.15);
+  border-color: transparent;
+}
+
+.pip-clip-bar .clip-info {
+  font-size: 0.6rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* ------------------------------------------------ Clip modal */
+#clip-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#clip-modal.clip-modal-hidden {
+  display: none;
+}
+
+.clip-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+}
+
+.clip-modal-panel {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  width: 100%;
+  max-width: 500px;
+  z-index: 1;
+}
+
+.clip-modal-panel h3 {
+  margin: 0 0 1rem;
+  font-size: 1.1rem;
+  color: var(--text);
+}
+
+/* Timeline */
+.clip-timeline {
+  position: relative;
+  width: 100%;
+  height: 32px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-bottom: 0.75rem;
+  cursor: default;
+  user-select: none;
+}
+
+.clip-timeline-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--sel-start, 0%);
+  right: calc(100% - var(--sel-end, 100%));
+  background: rgba(145, 71, 255, 0.25);
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+.clip-handle {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 10px;
+  background: var(--accent);
+  border-radius: 3px;
+  cursor: ew-resize;
+  transform: translateX(-50%);
+  z-index: 2;
+  transition: background 0.1s;
+}
+
+.clip-handle:hover,
+.clip-handle:active {
+  background: var(--accent-hover);
+}
+
+.clip-modal-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.clip-format-badge {
+  background: var(--border);
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.clip-modal-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.clip-btn-primary {
+  padding: 0.5rem 1.2rem;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.clip-btn-primary:hover {
+  background: var(--accent-hover);
+}
+
+.clip-btn-secondary {
+  padding: 0.5rem 1.2rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.clip-btn-secondary:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+/* ------------------------------------------------ Toast notifications */
+#toast-container {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  pointer-events: none;
+}
+
+.toast {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  opacity: 0;
+  transform: translateY(10px);
+  transition:
+    opacity 0.3s,
+    transform 0.3s;
+  pointer-events: auto;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.toast.toast-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
