@@ -5,16 +5,21 @@ import re
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
 import httpx
+import asyncio
+import shutil
+
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from .api_client import FishtankClient
 from .auth import AuthService
+from .clip_buffer import ClipBufferManager, ensure_ffmpeg, get_ffmpeg_path
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger("ftview")
@@ -42,6 +47,7 @@ else:
 
 auth_service = AuthService()
 ft_client = FishtankClient()
+clip_manager = ClipBufferManager()
 
 
 # Persistent HTTP client for HLS proxy (avoids TLS handshake per request)
@@ -60,11 +66,21 @@ async def lifespan(app: FastAPI):
     global _hls_client
     _hls_client = httpx.AsyncClient(timeout=30, follow_redirects=True)
     await auth_service.start_refresh_loop()
+    # Pre-check ffmpeg availability (non-blocking download if needed)
+    asyncio.create_task(_init_ffmpeg())
     yield
+    clip_manager.stop_all()
     auth_service.stop_refresh_loop()
     await ft_client.close()
     await _hls_client.aclose()
     _hls_client = None
+
+
+async def _init_ffmpeg() -> None:
+    try:
+        await ensure_ffmpeg()
+    except Exception:
+        logger.warning("ffmpeg auto-setup failed; clip features may be unavailable")
 
 
 app = FastAPI(title="Fishtank Stream Viewer", lifespan=lifespan)
@@ -225,3 +241,135 @@ async def hls_proxy(stream_id: str, path: str, request: Request):
 @app.get("/api/auth-status")
 async def api_auth_status():
     return {"authenticated": auth_service.is_authenticated}
+
+
+# ------------------------------------------------------------------ Clip API
+
+
+class ClipStartRequest(BaseModel):
+    target: str  # "main" | "pip"
+    stream_id: str
+    max_duration: int | None = None
+
+
+class ClipStopRequest(BaseModel):
+    target: str
+
+
+class ClipSwitchRequest(BaseModel):
+    target: str
+    stream_id: str
+
+
+class ClipExportRequest(BaseModel):
+    target: str
+    start_time: float
+    end_time: float
+
+
+def _clip_target(target: str) -> Literal["main", "pip"]:
+    if target not in ("main", "pip"):
+        raise HTTPException(400, "target must be 'main' or 'pip'")
+    return target  # type: ignore[return-value]
+
+
+def _token_getter():
+    return auth_service.live_stream_token
+
+
+@app.post("/api/clip/start")
+async def clip_start(body: ClipStartRequest):
+    if not auth_service.is_authenticated:
+        raise HTTPException(401, "Not authenticated")
+    target = _clip_target(body.target)
+    _valid_stream_id(body.stream_id)
+    buf = clip_manager.get(target)
+    buf.start(
+        stream_id=body.stream_id,
+        hls_client=_get_hls_client(),
+        token_getter=_token_getter,
+        domain_getter=_get_stream_domain,
+        max_duration=body.max_duration,
+    )
+    return {"ok": True}
+
+
+@app.post("/api/clip/stop")
+async def clip_stop(body: ClipStopRequest):
+    if not auth_service.is_authenticated:
+        raise HTTPException(401, "Not authenticated")
+    target = _clip_target(body.target)
+    clip_manager.get(target).stop()
+    return {"ok": True}
+
+
+@app.post("/api/clip/switch")
+async def clip_switch(body: ClipSwitchRequest):
+    if not auth_service.is_authenticated:
+        raise HTTPException(401, "Not authenticated")
+    target = _clip_target(body.target)
+    _valid_stream_id(body.stream_id)
+    buf = clip_manager.get(target)
+    if not buf.is_recording:
+        raise HTTPException(400, "Buffer is not recording")
+    buf.switch_camera(
+        new_stream_id=body.stream_id,
+        hls_client=_get_hls_client(),
+        token_getter=_token_getter,
+        domain_getter=_get_stream_domain,
+    )
+    return {"ok": True}
+
+
+@app.get("/api/clip/status")
+async def clip_status():
+    if not auth_service.is_authenticated:
+        raise HTTPException(401, "Not authenticated")
+    return clip_manager.status()
+
+
+@app.get("/api/clip/thumbnail")
+async def clip_thumbnail(target: str, time: float):
+    if not auth_service.is_authenticated:
+        raise HTTPException(401, "Not authenticated")
+    target = _clip_target(target)
+    if not get_ffmpeg_path():
+        raise HTTPException(503, "ffmpeg not available")
+    data = await clip_manager.generate_thumbnail(target, time)
+    if data is None:
+        raise HTTPException(404, "Could not generate thumbnail")
+    return StreamingResponse(iter([data]), media_type="image/jpeg")
+
+
+@app.post("/api/clip/export")
+async def clip_export(body: ClipExportRequest):
+    if not auth_service.is_authenticated:
+        raise HTTPException(401, "Not authenticated")
+    target = _clip_target(body.target)
+    if not get_ffmpeg_path():
+        raise HTTPException(503, "ffmpeg not available")
+    out_path = await clip_manager.export_clip(target, body.start_time, body.end_time)
+    if out_path is None:
+        raise HTTPException(400, "Export failed — no segments or invalid range")
+
+    # Return the MP4 and schedule cleanup of the temp directory
+    tmp_dir = out_path.parent
+
+    async def _cleanup():
+        await asyncio.sleep(5)
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    asyncio.create_task(_cleanup())
+
+    return FileResponse(
+        path=str(out_path),
+        media_type="video/mp4",
+        filename=f"clip_{target}.mp4",
+        headers={"Content-Disposition": f'attachment; filename="clip_{target}.mp4"'},
+    )
+
+
+@app.get("/api/clip/ffmpeg-status")
+async def clip_ffmpeg_status():
+    path = get_ffmpeg_path()
+    return {"available": path is not None, "path": path}

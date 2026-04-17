@@ -25,6 +25,20 @@
 
   const THUMBNAIL_REFRESH_MS = 30_000;
 
+  // ---------------------------------------------------------------- Clip state
+
+  const clipRecordBtn = document.getElementById('clip-record-btn');
+  const clipBufferIndicator = document.getElementById('clip-buffer-indicator');
+  const clipTrimBtn = document.getElementById('clip-trim-btn');
+  const clipDurationSelect = document.getElementById('clip-duration-select');
+
+  const pipClipRecordBtn = document.getElementById('pip-clip-record-btn');
+  const pipClipIndicator = document.getElementById('pip-clip-buffer-indicator');
+  const pipClipTrimBtn = document.getElementById('pip-clip-trim-btn');
+
+  let clipPollingTimer = null;
+  let clipStatus = { main: null, pip: null };
+
   // ---------------------------------------------------------------- Quality
 
   let currentQuality = localStorage.getItem('ftview-quality') || 'high';
@@ -181,6 +195,15 @@
     const stream = streamById(streamId);
     streamLabel.textContent = stream ? stream.name : streamId;
 
+    // If clip buffer is recording, switch it to the new camera
+    if (clipStatus.main && clipStatus.main.recording) {
+      fetch('/api/clip/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target: 'main', stream_id: streamId }),
+      }).catch(() => {});
+    }
+
     // Start HLS playback directly (URL is predictable, no round-trip needed)
     loadHls(hlsUrl(streamId, currentQuality));
 
@@ -327,6 +350,15 @@
       return;
     }
 
+    // If pip clip buffer is recording, switch it to the new camera
+    if (clipStatus.pip && clipStatus.pip.recording) {
+      fetch('/api/clip/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target: 'pip', stream_id: streamId }),
+      }).catch(() => {});
+    }
+
     pipStreamId = streamId;
     const stream = streamById(streamId);
     pipLabel.textContent = stream ? stream.name : streamId;
@@ -377,6 +409,10 @@
   }
 
   function unpinStream() {
+    // Stop pip clip buffer if recording
+    if (clipStatus.pip && clipStatus.pip.recording) {
+      toggleClipRecording('pip');
+    }
     if (pipHls) {
       pipHls.destroy();
       pipHls = null;
@@ -515,6 +551,301 @@
     }
   }
 
+  // ---------------------------------------------------------------- Clip recording
+
+  function formatTime(sec) {
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return m + ':' + String(s).padStart(2, '0');
+  }
+
+  async function toggleClipRecording(target) {
+    const buf = clipStatus[target];
+    const isRecording = buf && buf.recording;
+
+    if (isRecording) {
+      // Stop
+      await fetch('/api/clip/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target }),
+      }).catch(() => {});
+    } else {
+      // Start
+      const streamId = target === 'pip' ? pipStreamId : currentStreamId;
+      if (!streamId) return;
+      const maxDuration =
+        target === 'main' ? parseInt(clipDurationSelect.value, 10) : 120;
+      await fetch('/api/clip/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target,
+          stream_id: streamId,
+          max_duration: maxDuration,
+        }),
+      }).catch(() => {});
+    }
+    // Immediately poll for updated status
+    await pollClipStatus();
+  }
+
+  async function pollClipStatus() {
+    const data = await fetchJson('/api/clip/status');
+    if (!data) return;
+    clipStatus = data;
+    updateClipUI('main');
+    updateClipUI('pip');
+  }
+
+  function updateClipUI(target) {
+    const s = clipStatus[target];
+    if (target === 'main') {
+      if (s && s.recording) {
+        clipRecordBtn.classList.add('recording');
+        clipRecordBtn.textContent = '\u23F9'; // stop
+        clipRecordBtn.title = 'Stop clip buffer';
+        clipBufferIndicator.textContent =
+          formatTime(s.buffered_seconds) + ' / ' + formatTime(s.max_duration);
+        clipTrimBtn.disabled = s.segment_count === 0;
+      } else {
+        clipRecordBtn.classList.remove('recording');
+        clipRecordBtn.textContent = '\u23FA'; // record
+        clipRecordBtn.title = 'Start clip buffer';
+        clipBufferIndicator.textContent = '';
+        clipTrimBtn.disabled = true;
+      }
+    } else {
+      if (s && s.recording) {
+        pipClipRecordBtn.classList.add('recording');
+        pipClipRecordBtn.textContent = '\u23F9';
+        pipClipIndicator.textContent = formatTime(s.buffered_seconds);
+        pipClipTrimBtn.disabled = s.segment_count === 0;
+      } else {
+        pipClipRecordBtn.classList.remove('recording');
+        pipClipRecordBtn.textContent = '\u23FA';
+        pipClipIndicator.textContent = '';
+        pipClipTrimBtn.disabled = true;
+      }
+    }
+  }
+
+  function startClipPolling() {
+    stopClipPolling();
+    pollClipStatus();
+    clipPollingTimer = setInterval(pollClipStatus, 2000);
+  }
+
+  function stopClipPolling() {
+    if (clipPollingTimer) {
+      clearInterval(clipPollingTimer);
+      clipPollingTimer = null;
+    }
+  }
+
+  function isAnyBufferRecording() {
+    return (
+      (clipStatus.main && clipStatus.main.recording) ||
+      (clipStatus.pip && clipStatus.pip.recording)
+    );
+  }
+
+  // Clip button event listeners
+  clipRecordBtn.addEventListener('click', () => toggleClipRecording('main'));
+  clipTrimBtn.addEventListener('click', () => openTrimModal('main'));
+
+  pipClipRecordBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleClipRecording('pip');
+  });
+  pipClipTrimBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openTrimModal('pip');
+  });
+
+  // ---------------------------------------------------------------- Trim modal
+
+  const trimModal = document.getElementById('trim-modal');
+  const trimBackdrop = document.getElementById('trim-modal-backdrop');
+  const trimCancelBtn = document.getElementById('trim-cancel-btn');
+  const trimSaveBtn = document.getElementById('trim-save-btn');
+  const trimStartThumb = document.getElementById('trim-start-thumb');
+  const trimEndThumb = document.getElementById('trim-end-thumb');
+  const trimStartTime = document.getElementById('trim-start-time');
+  const trimEndTime = document.getElementById('trim-end-time');
+  const trimDurationLabel = document.getElementById('trim-duration-label');
+  const trimTrack = document.getElementById('trim-track');
+  const trimSelection = document.getElementById('trim-selection');
+  const trimHandleStart = document.getElementById('trim-handle-start');
+  const trimHandleEnd = document.getElementById('trim-handle-end');
+  const trimProgress = document.getElementById('trim-progress');
+
+  let trimTarget = 'main';
+  let trimTotalSeconds = 0;
+  let trimStartSec = 0;
+  let trimEndSec = 0;
+  let thumbDebounceTimer = null;
+
+  async function openTrimModal(target) {
+    // Fetch fresh status so trimTotalSeconds reflects actual buffer content
+    await pollClipStatus();
+    const s = clipStatus[target];
+    if (!s || s.segment_count === 0) return;
+
+    trimTarget = target;
+    trimTotalSeconds = s.buffered_seconds;
+    trimStartSec = 0;
+    trimEndSec = trimTotalSeconds;
+
+    // Reset handles
+    trimHandleStart.style.left = '0%';
+    trimHandleEnd.style.left = '100%';
+    updateTrimSelection();
+    updateTrimLabels();
+
+    // Load initial thumbnails
+    loadTrimThumbnail('start', 0);
+    loadTrimThumbnail('end', trimTotalSeconds);
+
+    trimProgress.classList.add('trim-progress-hidden');
+    trimSaveBtn.disabled = false;
+    trimModal.classList.remove('trim-modal-hidden');
+  }
+
+  function closeTrimModal() {
+    trimModal.classList.add('trim-modal-hidden');
+  }
+
+  function updateTrimSelection() {
+    const startPct = (trimStartSec / trimTotalSeconds) * 100;
+    const endPct = (trimEndSec / trimTotalSeconds) * 100;
+    trimSelection.style.left = startPct + '%';
+    trimSelection.style.width = endPct - startPct + '%';
+  }
+
+  function updateTrimLabels() {
+    trimStartTime.textContent = formatTime(trimStartSec);
+    trimEndTime.textContent = formatTime(trimEndSec);
+    const dur = Math.max(0, trimEndSec - trimStartSec);
+    trimDurationLabel.textContent = 'Duration: ' + formatTime(dur);
+  }
+
+  function loadTrimThumbnail(which, timeSec) {
+    const img = which === 'start' ? trimStartThumb : trimEndThumb;
+    const url =
+      '/api/clip/thumbnail?target=' +
+      encodeURIComponent(trimTarget) +
+      '&time=' +
+      timeSec.toFixed(2);
+    img.src = url;
+  }
+
+  function scheduleThumbLoad(which, timeSec) {
+    clearTimeout(thumbDebounceTimer);
+    thumbDebounceTimer = setTimeout(() => {
+      loadTrimThumbnail(which, timeSec);
+    }, 300);
+  }
+
+  // ---- Handle dragging
+  (function initTrimHandles() {
+    let activeHandle = null;
+
+    function onPointerDown(e) {
+      activeHandle = e.currentTarget.dataset.handle;
+      e.currentTarget.classList.add('dragging');
+      e.currentTarget.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    }
+
+    function onPointerMove(e) {
+      if (!activeHandle) return;
+      const rect = trimTrack.getBoundingClientRect();
+      let pct = (e.clientX - rect.left) / rect.width;
+      pct = Math.max(0, Math.min(1, pct));
+      const timeSec = pct * trimTotalSeconds;
+
+      if (activeHandle === 'start') {
+        trimStartSec = Math.min(timeSec, trimEndSec - 0.5);
+        trimStartSec = Math.max(0, trimStartSec);
+        trimHandleStart.style.left =
+          (trimStartSec / trimTotalSeconds) * 100 + '%';
+        scheduleThumbLoad('start', trimStartSec);
+      } else {
+        trimEndSec = Math.max(timeSec, trimStartSec + 0.5);
+        trimEndSec = Math.min(trimTotalSeconds, trimEndSec);
+        trimHandleEnd.style.left = (trimEndSec / trimTotalSeconds) * 100 + '%';
+        scheduleThumbLoad('end', trimEndSec);
+      }
+      updateTrimSelection();
+      updateTrimLabels();
+    }
+
+    function onPointerUp(e) {
+      if (!activeHandle) return;
+      const handle = activeHandle === 'start' ? trimHandleStart : trimHandleEnd;
+      handle.classList.remove('dragging');
+      // Final thumbnail load (immediate)
+      if (activeHandle === 'start') {
+        loadTrimThumbnail('start', trimStartSec);
+      } else {
+        loadTrimThumbnail('end', trimEndSec);
+      }
+      activeHandle = null;
+    }
+
+    trimHandleStart.addEventListener('pointerdown', onPointerDown);
+    trimHandleEnd.addEventListener('pointerdown', onPointerDown);
+    trimHandleStart.addEventListener('pointermove', onPointerMove);
+    trimHandleEnd.addEventListener('pointermove', onPointerMove);
+    trimHandleStart.addEventListener('pointerup', onPointerUp);
+    trimHandleEnd.addEventListener('pointerup', onPointerUp);
+  })();
+
+  // ---- Save clip
+  async function saveClip() {
+    trimSaveBtn.disabled = true;
+    trimProgress.classList.remove('trim-progress-hidden');
+
+    try {
+      const resp = await fetch('/api/clip/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target: trimTarget,
+          start_time: trimStartSec,
+          end_time: trimEndSec,
+        }),
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => null);
+        alert('Export failed: ' + (err ? err.detail : resp.statusText));
+        return;
+      }
+
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'clip_' + trimTarget + '.mp4';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      closeTrimModal();
+    } catch (err) {
+      alert('Export error: ' + err.message);
+    } finally {
+      trimSaveBtn.disabled = false;
+      trimProgress.classList.add('trim-progress-hidden');
+    }
+  }
+
+  trimSaveBtn.addEventListener('click', saveClip);
+  trimCancelBtn.addEventListener('click', closeTrimModal);
+  trimBackdrop.addEventListener('click', closeTrimModal);
+
   // ---------------------------------------------------------------- Boot
 
   function setQuality(quality, target) {
@@ -572,6 +903,7 @@
 
   document.addEventListener('DOMContentLoaded', () => {
     initQualityControls();
+    startClipPolling();
     init();
   });
 })();

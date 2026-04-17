@@ -39,6 +39,32 @@ block head %}
             High
           </button>
         </div>
+        <div id="clip-controls">
+          <button
+            id="clip-record-btn"
+            type="button"
+            title="Start/Stop clip buffer"
+            class="clip-btn"
+          >
+            &#x23FA;
+          </button>
+          <span id="clip-buffer-indicator" class="clip-indicator"></span>
+          <button
+            id="clip-trim-btn"
+            type="button"
+            title="Trim & save clip"
+            class="clip-btn"
+            disabled
+          >
+            &#x2702;
+          </button>
+          <select id="clip-duration-select" title="Buffer length">
+            <option value="30">30s</option>
+            <option value="60">60s</option>
+            <option value="120" selected>120s</option>
+            <option value="300">5m</option>
+          </select>
+        </div>
       </div>
     </div>
 
@@ -57,12 +83,80 @@ block head %}
         </button>
         <button class="quality-btn" data-quality="high" type="button">H</button>
       </div>
+      <div id="pip-clip-controls">
+        <button
+          id="pip-clip-record-btn"
+          type="button"
+          title="Start/Stop PiP clip buffer"
+          class="clip-btn clip-btn-small"
+        >
+          &#x23FA;
+        </button>
+        <span
+          id="pip-clip-buffer-indicator"
+          class="clip-indicator clip-indicator-small"
+        ></span>
+        <button
+          id="pip-clip-trim-btn"
+          type="button"
+          title="Trim & save PiP clip"
+          class="clip-btn clip-btn-small"
+          disabled
+        >
+          &#x2702;
+        </button>
+      </div>
       <div id="pip-resize-handle"></div>
     </div>
 
     <!-- Camera grid sidebar -->
     <div id="grid-panel">
       <div id="camera-grid"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Trim modal -->
+<div id="trim-modal" class="trim-modal-hidden">
+  <div id="trim-modal-backdrop"></div>
+  <div id="trim-modal-content">
+    <div id="trim-header">
+      <h3>Trim Clip</h3>
+      <button id="trim-cancel-btn" type="button" title="Cancel">&times;</button>
+    </div>
+    <div id="trim-previews">
+      <div class="trim-preview-box">
+        <span class="trim-preview-label">Start</span>
+        <img id="trim-start-thumb" alt="Start frame" />
+        <span id="trim-start-time" class="trim-time-label">00:00</span>
+      </div>
+      <div class="trim-preview-box">
+        <span class="trim-preview-label">End</span>
+        <img id="trim-end-thumb" alt="End frame" />
+        <span id="trim-end-time" class="trim-time-label">00:00</span>
+      </div>
+    </div>
+    <div id="trim-timeline">
+      <div id="trim-track">
+        <div id="trim-selection"></div>
+        <div
+          id="trim-handle-start"
+          class="trim-handle"
+          data-handle="start"
+        ></div>
+        <div id="trim-handle-end" class="trim-handle" data-handle="end"></div>
+      </div>
+    </div>
+    <div id="trim-info">
+      <span id="trim-duration-label">Duration: 0s</span>
+    </div>
+    <div id="trim-actions">
+      <button id="trim-save-btn" type="button" class="trim-action-btn">
+        Save Clip
+      </button>
+    </div>
+    <div id="trim-progress" class="trim-progress-hidden">
+      <span>Exporting&hellip;</span>
     </div>
   </div>
 </div>
