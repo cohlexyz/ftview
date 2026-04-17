@@ -76,6 +76,9 @@ STREAM_ID_RE = re.compile(r"^[a-zA-Z0-9\-]+$")
 # Allowed HLS file extensions for proxy
 HLS_PATH_RE = re.compile(r"^[a-zA-Z0-9_.\-+/]+$")
 
+# Quality presets: map user-facing name → upstream video= parameter value
+QUALITY_MAP = {"low": "minbps", "medium": "2.5mbps", "high": "maxbps"}
+
 
 def _valid_stream_id(stream_id: str) -> str:
     if not STREAM_ID_RE.match(stream_id) or len(stream_id) > 30:
@@ -166,7 +169,7 @@ def _get_stream_domain(stream_id: str) -> str:
 
 
 @app.get("/hls/{stream_id}/{path:path}")
-async def hls_proxy(stream_id: str, path: str):
+async def hls_proxy(stream_id: str, path: str, request: Request):
     if not auth_service.is_authenticated or not auth_service.live_stream_token:
         raise HTTPException(401, "Not authenticated")
     _valid_stream_id(stream_id)
@@ -176,6 +179,12 @@ async def hls_proxy(stream_id: str, path: str):
     domain = _get_stream_domain(stream_id)
     token = auth_service.live_stream_token
     upstream = f"https://{domain}/hls/live+{stream_id}/{path}?jwt={token}"
+
+    # Append quality (video bitrate) for master playlist requests
+    quality = request.query_params.get("quality", "high")
+    video_param = QUALITY_MAP.get(quality, QUALITY_MAP["high"])
+    if path == "index.m3u8":
+        upstream += f"&video={video_param}"
 
     # For .m3u8 playlists: fetch fully, rewrite any absolute URLs so they
     # also go through our proxy (otherwise HLS.js hits CORS on segments).

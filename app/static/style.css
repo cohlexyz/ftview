@@ -187,6 +187,64 @@ body {
   cursor: pointer;
 }
 
+/* ---- Quality controls */
+#quality-controls {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.quality-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.55rem;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.quality-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.quality-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ---- PiP quality controls */
+#pip-quality-controls {
+  position: absolute;
+  bottom: 0.3rem;
+  right: 0.3rem;
+  display: inline-flex;
+  gap: 1px;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 4px;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.2s;
+  z-index: 2;
+}
+
+#pip-container:hover #pip-quality-controls {
+  opacity: 1;
+}
+
+#pip-quality-controls .quality-btn {
+  font-size: 0.65rem;
+  padding: 0.15rem 0.35rem;
+}
+
 #video {
   width: 100%;
   height: 100%;

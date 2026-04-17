@@ -28,6 +28,17 @@ block head %}
           step="0.01"
           value="1"
         />
+        <div id="quality-controls">
+          <button class="quality-btn" data-quality="low" type="button">
+            Low
+          </button>
+          <button class="quality-btn" data-quality="medium" type="button">
+            Med
+          </button>
+          <button class="quality-btn" data-quality="high" type="button">
+            High
+          </button>
+        </div>
       </div>
     </div>
 
@@ -39,6 +50,13 @@ block head %}
         &#x1F507;
       </button>
       <button id="pip-close" type="button" title="Close PiP">&times;</button>
+      <div id="pip-quality-controls">
+        <button class="quality-btn" data-quality="low" type="button">L</button>
+        <button class="quality-btn" data-quality="medium" type="button">
+          M
+        </button>
+        <button class="quality-btn" data-quality="high" type="button">H</button>
+      </div>
       <div id="pip-resize-handle"></div>
     </div>
 

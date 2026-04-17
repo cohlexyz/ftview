@@ -25,6 +25,20 @@
 
   const THUMBNAIL_REFRESH_MS = 30_000;
 
+  // ---------------------------------------------------------------- Quality
+
+  let currentQuality = localStorage.getItem('ftview-quality') || 'high';
+  let pipQuality = localStorage.getItem('ftview-pip-quality') || 'high';
+
+  function hlsUrl(streamId, quality) {
+    return (
+      '/hls/' +
+      encodeURIComponent(streamId) +
+      '/index.m3u8?quality=' +
+      encodeURIComponent(quality)
+    );
+  }
+
   // ---------------------------------------------------------------- Volume (persists across switches)
 
   function loadVolume() {
@@ -168,7 +182,7 @@
     streamLabel.textContent = stream ? stream.name : streamId;
 
     // Start HLS playback directly (URL is predictable, no round-trip needed)
-    loadHls('/hls/' + encodeURIComponent(streamId) + '/index.m3u8');
+    loadHls(hlsUrl(streamId, currentQuality));
 
     // Load clickable zones in parallel with HLS startup
     if (stream && stream.interactive) {
@@ -323,7 +337,7 @@
       pipHls = null;
     }
 
-    const url = '/hls/' + encodeURIComponent(streamId) + '/index.m3u8';
+    const url = hlsUrl(streamId, pipQuality);
 
     if (Hls.isSupported()) {
       pipHls = new Hls({
@@ -415,7 +429,12 @@
 
     pipContainer.addEventListener('pointerdown', (e) => {
       // Don't drag when interacting with buttons or resize handle
-      if (e.target.closest('#pip-close, #pip-mute, #pip-resize-handle')) return;
+      if (
+        e.target.closest(
+          '#pip-close, #pip-mute, #pip-resize-handle, #pip-quality-controls',
+        )
+      )
+        return;
       dragging = true;
       pipContainer.classList.add('pip-dragging');
       const rect = pipContainer.getBoundingClientRect();
@@ -498,5 +517,61 @@
 
   // ---------------------------------------------------------------- Boot
 
-  document.addEventListener('DOMContentLoaded', init);
+  function setQuality(quality, target) {
+    if (target === 'pip') {
+      pipQuality = quality;
+      localStorage.setItem('ftview-pip-quality', quality);
+      updateQualityButtons('pip');
+      // Reload PiP stream at new quality without toggling pin state
+      if (pipStreamId && pipHls) {
+        pipHls.loadSource(hlsUrl(pipStreamId, pipQuality));
+      } else if (
+        pipStreamId &&
+        pipVideo.canPlayType('application/vnd.apple.mpegurl')
+      ) {
+        pipVideo.src = hlsUrl(pipStreamId, pipQuality);
+      }
+    } else {
+      currentQuality = quality;
+      localStorage.setItem('ftview-quality', quality);
+      updateQualityButtons('main');
+      if (currentStreamId) loadHls(hlsUrl(currentStreamId, currentQuality));
+    }
+  }
+
+  function updateQualityButtons(target) {
+    const containerId =
+      target === 'pip' ? 'pip-quality-controls' : 'quality-controls';
+    const active = target === 'pip' ? pipQuality : currentQuality;
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.querySelectorAll('.quality-btn').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.quality === active);
+    });
+  }
+
+  function initQualityControls() {
+    document
+      .querySelectorAll('#quality-controls .quality-btn')
+      .forEach((btn) => {
+        btn.addEventListener('click', () =>
+          setQuality(btn.dataset.quality, 'main'),
+        );
+      });
+    document
+      .querySelectorAll('#pip-quality-controls .quality-btn')
+      .forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          setQuality(btn.dataset.quality, 'pip');
+        });
+      });
+    updateQualityButtons('main');
+    updateQualityButtons('pip');
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    initQualityControls();
+    init();
+  });
 })();
