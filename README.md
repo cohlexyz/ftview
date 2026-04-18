@@ -16,3 +16,5 @@ Features
 - Camera grid with all cameras listed in the API
 - Main view
 - Secondary pop up view. Click any camera in the grid while holding shift to open the popup view
+- Clickable areas
+- Builtin clipping that follows camera
