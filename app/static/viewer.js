@@ -303,6 +303,7 @@
 
       poly.addEventListener('click', (e) => {
         e.stopPropagation();
+        hideZoneTooltip();
         switchStream(zone.action.metadata);
       });
 
