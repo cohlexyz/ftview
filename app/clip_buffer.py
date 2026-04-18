@@ -9,6 +9,7 @@ import shutil
 import stat
 import subprocess
 import tempfile
+import zipfile
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,63 +27,113 @@ FFMPEG_CACHE_DIR = Path.home() / ".ftview" / "bin"
 # FFmpeg discovery / download
 # ------------------------------------------------------------------
 
+# Per-platform download configs: (url, archive_type, binary_name_inside_archive)
+# archive_type is "tar_xz" (Linux) or "zip" (Windows/macOS)
+_DOWNLOAD_CONFIGS: dict[tuple[str, str], tuple[str, str, str]] = {
+    ("linux",   "x86_64"):  ("https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz", "tar_xz", "ffmpeg"),
+    ("linux",   "amd64"):   ("https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz", "tar_xz", "ffmpeg"),
+    ("linux",   "aarch64"): ("https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-arm64-static.tar.xz", "tar_xz", "ffmpeg"),
+    ("linux",   "arm64"):   ("https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-arm64-static.tar.xz", "tar_xz", "ffmpeg"),
+    # BtbN GPL static builds (GitHub Releases, follow_redirects required)
+    ("windows", "amd64"):   ("https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip", "zip", "ffmpeg.exe"),
+    ("windows", "x86_64"):  ("https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip", "zip", "ffmpeg.exe"),
+    # evermeet.cx provides macOS Intel static builds; Apple Silicon Macs can run
+    # these via Rosetta 2.  If that won't work, install ffmpeg with Homebrew instead.
+    ("darwin",  "x86_64"):  ("https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip", "zip", "ffmpeg"),
+    ("darwin",  "arm64"):   ("https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip", "zip", "ffmpeg"),
+}
+
+
 def _find_ffmpeg() -> str | None:
-    """Return path to ffmpeg binary, or None if unavailable."""
+    """Return path to ffmpeg binary or None if unavailable."""
     # Check PATH first
     system_ffmpeg = shutil.which("ffmpeg")
     if system_ffmpeg:
         return system_ffmpeg
-    # Check cached download
-    cached = FFMPEG_CACHE_DIR / "ffmpeg"
-    if cached.is_file() and os.access(cached, os.X_OK):
+    # Check cached download (Windows uses .exe suffix)
+    ffmpeg_name = "ffmpeg.exe" if platform.system().lower() == "windows" else "ffmpeg"
+    cached = FFMPEG_CACHE_DIR / ffmpeg_name
+    if cached.is_file() and (platform.system().lower() == "windows" or os.access(cached, os.X_OK)):
         return str(cached)
     return None
 
 
 async def _download_ffmpeg() -> str | None:
-    """Download a static ffmpeg binary for Linux x86_64. Returns path or None."""
+    """Download a static ffmpeg binary for the current platform. Returns path or None."""
     system = platform.system().lower()
     machine = platform.machine().lower()
-    if system != "linux" or machine not in ("x86_64", "amd64"):
-        logger.warning("Auto-download only supports linux-x86_64, got %s-%s", system, machine)
+
+    config = _DOWNLOAD_CONFIGS.get((system, machine))
+    if not config:
+        logger.warning(
+            "ffmpeg auto-download not supported for %s-%s; install ffmpeg manually",
+            system, machine,
+        )
         return None
 
-    url = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
+    url, archive_type, binary_name = config
     logger.info("Downloading static ffmpeg from %s …", url)
+
+    ffmpeg_name = "ffmpeg.exe" if system == "windows" else "ffmpeg"
+    out_path = FFMPEG_CACHE_DIR / ffmpeg_name
+    suffix = ".tar.xz" if archive_type == "tar_xz" else ".zip"
+    tmp_archive = FFMPEG_CACHE_DIR / ("ffmpeg_download" + suffix)
 
     try:
         FFMPEG_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        tmp_tar = FFMPEG_CACHE_DIR / "ffmpeg.tar.xz"
 
-        async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=180, follow_redirects=True) as client:
             async with client.stream("GET", url) as resp:
                 if resp.status_code != 200:
                     logger.error("ffmpeg download returned %s", resp.status_code)
                     return None
-                with open(tmp_tar, "wb") as f:
+                with open(tmp_archive, "wb") as f:
                     async for chunk in resp.aiter_bytes(chunk_size=256 * 1024):
                         f.write(chunk)
 
-        # Extract just the ffmpeg binary
-        proc = await asyncio.create_subprocess_exec(
-            "tar", "xf", str(tmp_tar), "--wildcards", "*/ffmpeg",
-            "--strip-components=1", "-C", str(FFMPEG_CACHE_DIR),
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        _, stderr = await proc.communicate()
-        tmp_tar.unlink(missing_ok=True)
+        if archive_type == "tar_xz":
+            # Use system tar — always present on Linux
+            proc = await asyncio.create_subprocess_exec(
+                "tar", "xf", str(tmp_archive),
+                "--wildcards", f"*/{binary_name}",
+                "--strip-components=1",
+                "-C", str(FFMPEG_CACHE_DIR),
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await proc.communicate()
+            if proc.returncode != 0:
+                logger.error("tar extraction failed: %s", stderr.decode())
+                tmp_archive.unlink(missing_ok=True)
+                return None
+        else:  # zip — use Python stdlib (works on all platforms)
+            with zipfile.ZipFile(tmp_archive) as zf:
+                # Find the binary anywhere inside the zip by filename
+                matches = [n for n in zf.namelist() if Path(n).name == binary_name]
+                if not matches:
+                    logger.error(
+                        "ffmpeg binary '%s' not found in zip; contents: %s",
+                        binary_name, zf.namelist()[:20],
+                    )
+                    tmp_archive.unlink(missing_ok=True)
+                    return None
+                out_path.write_bytes(zf.read(matches[0]))
 
-        ffmpeg_path = FFMPEG_CACHE_DIR / "ffmpeg"
-        if ffmpeg_path.is_file():
-            ffmpeg_path.chmod(ffmpeg_path.stat().st_mode | stat.S_IEXEC)
-            logger.info("ffmpeg downloaded to %s", ffmpeg_path)
-            return str(ffmpeg_path)
+        tmp_archive.unlink(missing_ok=True)
 
-        logger.error("ffmpeg binary not found after extraction: %s", stderr.decode())
-        return None
+        if not out_path.is_file():
+            logger.error("ffmpeg binary missing after extraction")
+            return None
+
+        if system != "windows":
+            out_path.chmod(out_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+        logger.info("ffmpeg downloaded to %s", out_path)
+        return str(out_path)
+
     except Exception:
         logger.exception("Failed to download ffmpeg")
+        tmp_archive.unlink(missing_ok=True)
         return None
 
 
