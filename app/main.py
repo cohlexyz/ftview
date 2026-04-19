@@ -132,11 +132,27 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class ThirdPartyLoginRequest(BaseModel):
+    url: str
+    username: str
+    password: str
+
+
 @app.post("/api/login")
 async def api_login(body: LoginRequest):
     success = await auth_service.login(body.email, body.password)
     if not success:
         raise HTTPException(401, "Login failed — check your email and password")
+    return {"ok": True}
+
+
+@app.post("/api/login/thirdparty")
+async def api_login_thirdparty(body: ThirdPartyLoginRequest):
+    if not body.url.startswith("https://"):
+        raise HTTPException(400, "URL must use HTTPS")
+    success = await auth_service.login_thirdparty(body.url, body.username, body.password)
+    if not success:
+        raise HTTPException(401, "Login failed — check the endpoint URL and credentials")
     return {"ok": True}
 
 

@@ -1,47 +1,135 @@
-{% extends "base.html" %} {% block title %}Login — Fishtank Viewer{% endblock %}
+{% extends "base.html" %} {% block title %}Login - Fishtank Viewer{% endblock %}
 {% block body %}
 <div class="login-wrapper">
-  <form id="login-form" class="login-form" autocomplete="on">
+  <div class="login-form">
     <h1>Fishtank Viewer</h1>
-    <label for="email">Email</label>
-    <input
-      type="email"
-      id="email"
-      name="email"
-      required
-      autofocus
-      autocomplete="email"
-    />
-    <label for="password">Password</label>
-    <input
-      type="password"
-      id="password"
-      name="password"
-      required
-      autocomplete="current-password"
-    />
-    <button type="submit" id="login-btn">Log In</button>
-    <p id="login-error" class="error" hidden></p>
-  </form>
+
+    <div class="login-tabs" role="tablist">
+      <button
+        class="login-tab"
+        id="tab-official"
+        role="tab"
+        aria-selected="true"
+        aria-controls="panel-official"
+      >
+        Official API
+      </button>
+      <button
+        class="login-tab"
+        id="tab-thirdparty"
+        role="tab"
+        aria-selected="false"
+        aria-controls="panel-thirdparty"
+      >
+        Third-Party Endpoint
+      </button>
+    </div>
+
+    <!-- Official API panel -->
+    <form
+      id="panel-official"
+      role="tabpanel"
+      aria-labelledby="tab-official"
+      autocomplete="on"
+    >
+      <label for="email">Email</label>
+      <input
+        type="email"
+        id="email"
+        name="email"
+        required
+        autofocus
+        autocomplete="email"
+      />
+      <label for="password">Password</label>
+      <input
+        type="password"
+        id="password"
+        name="password"
+        required
+        autocomplete="current-password"
+      />
+      <button type="submit" id="official-btn">Log In</button>
+      <p id="official-error" class="error" hidden></p>
+    </form>
+
+    <!-- Third-Party Endpoint panel -->
+    <form
+      id="panel-thirdparty"
+      role="tabpanel"
+      aria-labelledby="tab-thirdparty"
+      hidden
+      autocomplete="on"
+    >
+      <label for="tp-url">Token Endpoint URL</label>
+      <input
+        type="url"
+        id="tp-url"
+        name="tp-url"
+        placeholder="https://example.com/api/v1/token"
+        required
+        autocomplete="url"
+      />
+      <label for="tp-username">Username</label>
+      <input
+        type="text"
+        id="tp-username"
+        name="tp-username"
+        required
+        autocomplete="username"
+      />
+      <label for="tp-password">Password</label>
+      <input
+        type="password"
+        id="tp-password"
+        name="tp-password"
+        required
+        autocomplete="current-password"
+      />
+      <button type="submit" id="tp-btn">Log In</button>
+      <p id="tp-error" class="error" hidden></p>
+    </form>
+  </div>
 </div>
 <script>
-  document
-    .getElementById('login-form')
-    .addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const btn = document.getElementById('login-btn');
-      const errEl = document.getElementById('login-error');
+  (function () {
+    const TAB_KEY = 'ftv-login-tab';
+    const tabs = {
+      official: document.getElementById('tab-official'),
+      thirdparty: document.getElementById('tab-thirdparty'),
+    };
+    const panels = {
+      official: document.getElementById('panel-official'),
+      thirdparty: document.getElementById('panel-thirdparty'),
+    };
+
+    function switchTab(id) {
+      for (const [key, tab] of Object.entries(tabs)) {
+        const active = key === id;
+        tab.setAttribute('aria-selected', String(active));
+        tab.classList.toggle('active', active);
+        panels[key].hidden = !active;
+      }
+      localStorage.setItem(TAB_KEY, id);
+    }
+
+    // Restore last-used tab
+    const saved = localStorage.getItem(TAB_KEY);
+    if (saved && tabs[saved]) switchTab(saved);
+    else switchTab('official');
+
+    tabs.official.addEventListener('click', () => switchTab('official'));
+    tabs.thirdparty.addEventListener('click', () => switchTab('thirdparty'));
+
+    async function handleLogin(endpoint, payload, btnEl, errEl) {
       errEl.hidden = true;
-      btn.disabled = true;
-      btn.textContent = 'Logging in…';
+      btnEl.disabled = true;
+      btnEl.textContent = 'Logging in…';
       try {
-        const resp = await fetch('/api/login', {
+        const resp = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: document.getElementById('email').value,
-            password: document.getElementById('password').value,
-          }),
+          body: JSON.stringify(payload),
         });
         if (resp.ok) {
           window.location.href = '/viewer';
@@ -50,13 +138,48 @@
           errEl.textContent = data?.detail || 'Login failed';
           errEl.hidden = false;
         }
-      } catch (err) {
+      } catch {
         errEl.textContent = 'Network error';
         errEl.hidden = false;
       } finally {
-        btn.disabled = false;
-        btn.textContent = 'Log In';
+        btnEl.disabled = false;
+        btnEl.textContent = 'Log In';
       }
+    }
+
+    panels.official.addEventListener('submit', (e) => {
+      e.preventDefault();
+      handleLogin(
+        '/api/login',
+        {
+          email: document.getElementById('email').value,
+          password: document.getElementById('password').value,
+        },
+        document.getElementById('official-btn'),
+        document.getElementById('official-error'),
+      );
     });
+
+    panels.thirdparty.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const url = document.getElementById('tp-url').value;
+      if (!url.startsWith('https://')) {
+        const errEl = document.getElementById('tp-error');
+        errEl.textContent = 'URL must start with https://';
+        errEl.hidden = false;
+        return;
+      }
+      handleLogin(
+        '/api/login/thirdparty',
+        {
+          url,
+          username: document.getElementById('tp-username').value,
+          password: document.getElementById('tp-password').value,
+        },
+        document.getElementById('tp-btn'),
+        document.getElementById('tp-error'),
+      );
+    });
+  })();
 </script>
 {% endblock %}

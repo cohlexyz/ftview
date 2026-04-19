@@ -32,6 +32,44 @@ body {
 }
 
 /* ------------------------------------------------ Login */
+.login-tabs {
+  display: flex;
+  gap: 5px;
+}
+
+.login-tab {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  /* Pull down 1px so the active border overlaps the container's divider */
+  margin-bottom: -1px;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.login-tab:hover {
+  color: var(--text);
+}
+
+.login-tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+/* :not([hidden]) ensures the browser's hidden attribute is not overridden */
+.login-form form:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
 .login-wrapper {
   display: flex;
   align-items: center;
@@ -82,11 +120,15 @@ body {
   border: none;
   border-radius: var(--radius);
   background: var(--accent);
-  color: #fff;
-  font-size: 1rem;
+  color: var(--text);
+  font-size: 0.7rem;
   font-weight: 600;
   cursor: pointer;
   transition: background 0.15s;
+}
+
+button.login-tab {
+  color: var(--text-dim);
 }
 
 .login-form button:hover {

@@ -26,30 +26,92 @@ class AuthService:
         self.refresh_token: str | None = None
         self.live_stream_token: str | None = None
         self.expiry: datetime | None = None
+        self.mode: str = "official"  # "official" | "thirdparty"
+        self._tp_url: str | None = None
+        self._tp_username: str | None = None
+        self._tp_password: str | None = None
         self._refresh_task: asyncio.Task | None = None
 
     # ------------------------------------------------------------------
     # Credential persistence
     # ------------------------------------------------------------------
 
-    def _load_credentials(self) -> tuple[str, str] | None:
-        """Load email/password from env vars or credentials.json."""
+    def _load_credentials(self) -> dict | None:
+        """Load credentials from env vars or credentials.json.
+
+        Returns a dict with at minimum a 'mode' key.  For 'official' mode the
+        dict also contains 'email' and 'password'; for 'thirdparty' it contains
+        'url', 'username', and 'password'.  Missing 'mode' in a stored file is
+        treated as 'official' for backward compatibility.
+        """
+        # Env vars always take precedence and imply official mode
         email = os.environ.get("FISHTANK_EMAIL", "")
         password = os.environ.get("FISHTANK_PASSWORD", "")
         if email and password:
-            return email, password
-        if CREDENTIALS_FILE.is_file():
-            data = json.loads(CREDENTIALS_FILE.read_text())
-            return data.get("email", ""), data.get("password", "")
-        return None
+            return {"mode": "official", "email": email, "password": password}
+
+        if not CREDENTIALS_FILE.is_file():
+            return None
+
+        data = json.loads(CREDENTIALS_FILE.read_text())
+        mode = data.get("mode", "official")
+        data["mode"] = mode
+        return data
 
     def _save_credentials(self, email: str, password: str) -> None:
-        CREDENTIALS_FILE.write_text(json.dumps({"email": email, "password": password}))
+        CREDENTIALS_FILE.write_text(
+            json.dumps({"mode": "official", "email": email, "password": password})
+        )
+        CREDENTIALS_FILE.chmod(0o600)
+
+    def _save_thirdparty_credentials(self, url: str, username: str, password: str) -> None:
+        CREDENTIALS_FILE.write_text(
+            json.dumps({"mode": "thirdparty", "url": url, "username": username, "password": password})
+        )
         CREDENTIALS_FILE.chmod(0o600)
 
     # ------------------------------------------------------------------
     # Login
     # ------------------------------------------------------------------
+
+    async def login_thirdparty(self, url: str, username: str, password: str, *, save: bool = True) -> bool:
+        """Login via a third-party token endpoint using HTTP Basic Auth.
+
+        The endpoint must be HTTPS and must return the live_stream_token as
+        plain text in the response body.
+        """
+        if not url.startswith("https://"):
+            logger.error("Third-party URL must use HTTPS")
+            return False
+
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(url, auth=(username, password))
+
+        if resp.status_code != 200:
+            logger.error("Third-party login failed: %s %s", resp.status_code, resp.text)
+            return False
+
+        token = resp.text.strip()
+        if not token:
+            logger.error("Third-party login response was empty")
+            return False
+
+        self.live_stream_token = token
+        self.mode = "thirdparty"
+        self._tp_url = url
+        self._tp_username = username
+        self._tp_password = password
+
+        # Clear any official tokens — they are not used in thirdparty mode
+        self.access_token = None
+        self.refresh_token = None
+        self.expiry = None
+
+        if save:
+            self._save_thirdparty_credentials(url, username, password)
+
+        logger.info("Third-party login successful")
+        return True
 
     async def login(self, email: str, password: str, *, save: bool = True) -> bool:
         """Login via email/password. Returns True on success."""
@@ -142,6 +204,24 @@ class AuthService:
 
     async def ensure_authenticated(self) -> bool:
         """Ensure we have valid tokens. Re-login or refresh as needed."""
+        # ------------------------------------------------------------------
+        # Third-party mode: re-fetch the token from the custom endpoint.
+        # No expiry logic is used; we simply refresh on every cycle.
+        # ------------------------------------------------------------------
+        creds = self._load_credentials()
+
+        if (self.mode == "thirdparty" or (creds and creds.get("mode") == "thirdparty")):
+            url = self._tp_url or (creds and creds.get("url"))
+            username = self._tp_username or (creds and creds.get("username"))
+            password = self._tp_password or (creds and creds.get("password"))
+            if url and username and password:
+                return await self.login_thirdparty(url, username, password, save=False)
+            logger.warning("Third-party credentials missing, cannot authenticate")
+            return False
+
+        # ------------------------------------------------------------------
+        # Official mode: login or Supabase refresh
+        # ------------------------------------------------------------------
         needs_login = (
             not self.access_token
             or not self.refresh_token
@@ -149,10 +229,9 @@ class AuthService:
         )
 
         if needs_login:
-            creds = self._load_credentials()
-            if creds and creds[0] and creds[1]:
+            if creds and creds.get("email") and creds.get("password"):
                 logger.info("Tokens missing/expired, attempting login")
-                if await self.login(creds[0], creds[1], save=False):
+                if await self.login(creds["email"], creds["password"], save=False):
                     return True
             # Fall back to refresh if we still have tokens
             if self.access_token and self.refresh_token:
